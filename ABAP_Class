@@ -1,0 +1,58 @@
+ DATA: method   TYPE string,
+  query_string  TYPE string,
+  callback      TYPE string,
+  json_response TYPE string,
+  t_classname TYPE TABLE OF VBELN_VA,
+  r_classname TYPE RANGE OF VBELN_VA,
+  l_classname LIKE LINE OF r_classname,
+  l_lines LIKE sy-tfill.
+  FIELD-SYMBOLS: <classname> TYPE any.
+
+DATA: lo_json_data TYPE REF TO cl_trex_json_serializer,
+      json  TYPE string,
+      json1 TYPE string.
+
+TYPES : BEGIN OF ty_prod,
+         productid TYPE zstockprod-productid,
+         name TYPE zstockprod-name,
+         category TYPE zstockprod-category,
+         available TYPE zstockprod-available,
+         unitprice TYPE zstockprod-unitprice,
+         datechecked TYPE zstockprod-datechecked,
+        END OF ty_prod.
+
+data : ls_prod type ty_prod,
+     lt_prod type standard table of ty_prod.
+DATA : ls_pline TYPE zstockprod,
+       lt_pline TYPE STANDARD TABLE OF zstockprod.
+
+method = server->request->get_header_field( name = '~request_method' ).
+*  query_string = server->request->GET_FORM_FIELD_CS( name = 'q' ).
+  query_string = server->request->get_cdata( ).
+
+  IF query_string IS INITIAL.
+    server->response->set_status( code = '400' reason = 'Query String is initial' ).
+    EXIT.
+  ENDIF.
+
+/ui2/cl_json=>deserialize( EXPORTING json = query_string pretty_name = /ui2/cl_json=>pretty_mode-camel_case CHANGING data = lt_prod ).
+
+loop at lt_prod INTO ls_prod. " WHERE datepurchase IN s_date.
+  ls_pline-productid = ls_prod-productid.
+  ls_pline-name = ls_prod-name.
+  ls_pline-category = ls_prod-category.
+  ls_pline-available = ls_prod-available.
+  ls_pline-unitprice = ls_prod-unitprice.
+  ls_pline-datechecked = ls_prod-datechecked.
+  MODIFY zstockprod FROM ls_pline.
+endloop.
+
+     CALL METHOD server->response->set_header_field(
+     name = 'Content-Type'
+     value = 'text/html; charset=utf-8' "for text
+     ).
+* Set CORS access control to avoid browser policy restrictions around
+* Cross Domain communication
+   CALL METHOD server->response->set_header_field( name = 'Access-Control-Allow-Origin' value = '*' ).
+
+  server->response->set_cdata( data = query_string ).
